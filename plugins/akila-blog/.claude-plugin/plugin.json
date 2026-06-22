@@ -1,0 +1,17 @@
+{
+  "name": "akila-blog",
+  "description": "Publish any HTML artifact as a full post on the harrytruong Next.js blog — splits the file into scoped styles/html/script, scaffolds the post route, registers metadata, and ships via the owner-attributed PR workflow Vercel requires.",
+  "version": "0.1.0",
+  "author": {
+    "name": "harrytruong0804"
+  },
+  "repository": "https://github.com/harrytruong0804/agent-dev-utils",
+  "license": "MIT",
+  "keywords": [
+    "blog",
+    "nextjs",
+    "publishing",
+    "vercel",
+    "html"
+  ]
+}

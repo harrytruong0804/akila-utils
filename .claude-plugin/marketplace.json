@@ -5,6 +5,11 @@
   },
   "plugins": [
     {
+      "name": "akila-blog",
+      "source": "./plugins/akila-blog",
+      "description": "Publish any HTML artifact as a full post on the harrytruong Next.js blog — splits the file into scoped styles/html/script, scaffolds the post route, registers metadata, and ships via the owner-attributed PR workflow Vercel requires."
+    },
+    {
       "name": "akila-confluence",
       "source": "./plugins/akila-confluence",
       "description": "Publish to Confluence with images/attachments — wraps the Atlassian MCP and adds a REST helper to render figures, upload attachments, and embed them, preserving visualization the storage format would strip."
