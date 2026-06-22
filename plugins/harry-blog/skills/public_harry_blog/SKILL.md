@@ -1,9 +1,9 @@
 ---
-name: public_akila_blog
+name: public_harry_blog
 description: Publish an HTML artifact as a full post on the harrytruong Next.js blog (harrytruong.vercel.app) — the post is listed on the homepage and lives at /posts/<slug>. USE FOR ANY request to publish/post/add an HTML file or content as a (public, listed) blog post on harry's blog. Splits the HTML into scoped styles/html/script, scaffolds the route, registers metadata, and ships via the owner-attributed PR workflow Vercel Hobby requires. (For an UNLISTED secret link instead, this is the wrong skill — that drops raw HTML into public/r-<hash>/.)
 ---
 
-# public_akila_blog
+# public_harry_blog
 
 Publish an HTML artifact as a **full, homepage-listed post** on the harrytruong blog
 (Next.js App Router, repo `F:/SOURCE/Docs/harrytruong`, deployed to Vercel).

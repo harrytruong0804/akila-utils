@@ -5,8 +5,8 @@
   },
   "plugins": [
     {
-      "name": "akila-blog",
-      "source": "./plugins/akila-blog",
+      "name": "harry-blog",
+      "source": "./plugins/harry-blog",
       "description": "Publish any HTML artifact as a full post on the harrytruong Next.js blog — splits the file into scoped styles/html/script, scaffolds the post route, registers metadata, and ships via the owner-attributed PR workflow Vercel requires."
     },
     {
