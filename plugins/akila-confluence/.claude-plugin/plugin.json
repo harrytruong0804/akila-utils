@@ -1,0 +1,17 @@
+{
+  "name": "akila-confluence",
+  "description": "Publish to Confluence with images/attachments — wraps the Atlassian MCP and adds a REST helper to render figures, upload attachments, and embed them, preserving visualization the storage format would strip.",
+  "version": "0.1.0",
+  "author": {
+    "name": "harrytruong0804"
+  },
+  "repository": "https://github.com/harrytruong0804/akila-utils",
+  "license": "MIT",
+  "keywords": [
+    "confluence",
+    "atlassian",
+    "mcp",
+    "publishing",
+    "attachments"
+  ]
+}

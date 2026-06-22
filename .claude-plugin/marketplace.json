@@ -1,9 +1,14 @@
 {
-  "name": "agent-dev-utils",
+  "name": "akila-utils",
   "owner": {
     "name": "harrytruong0804"
   },
   "plugins": [
+    {
+      "name": "akila-confluence",
+      "source": "./plugins/akila-confluence",
+      "description": "Publish to Confluence with images/attachments — wraps the Atlassian MCP and adds a REST helper to render figures, upload attachments, and embed them, preserving visualization the storage format would strip."
+    },
     {
       "name": "openai-agents-tracing",
       "source": "./plugins/openai-agents-tracing",
