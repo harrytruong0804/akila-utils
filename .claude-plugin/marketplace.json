@@ -28,6 +28,11 @@
       "name": "plugin-dev",
       "source": "./plugins/plugin-dev",
       "description": "Guide for developing, versioning, releasing, and self-updating Claude Code plugins via Git-based marketplaces"
+    },
+    {
+      "name": "akila-omniverse",
+      "source": "./plugins/akila-omniverse",
+      "description": "Switch the Akila web-user-platform USD viewer into local streaming debug mode — point it at a local Kit/Omniverse streaming server, disable auth/WSS, set the datacenter, and fix the Windows dev-build prerequisites."
     }
   ]
 }

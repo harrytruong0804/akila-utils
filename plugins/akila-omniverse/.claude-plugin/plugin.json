@@ -1,0 +1,20 @@
+{
+  "name": "akila-omniverse",
+  "description": "Switch the Akila web-user-platform USD viewer into local streaming debug mode — point it at a local Kit/Omniverse streaming server, disable auth/WSS, set the right datacenter, and fix the Windows dev-build prerequisites (cross-env, thread-loader, private npm auth).",
+  "version": "0.1.0",
+  "author": {
+    "name": "harrytruong0804"
+  },
+  "repository": "https://github.com/harrytruong0804/agent-dev-utils",
+  "license": "MIT",
+  "keywords": [
+    "omniverse",
+    "usd",
+    "kit",
+    "streaming",
+    "webrtc",
+    "vue",
+    "local-debug",
+    "akila"
+  ]
+}
