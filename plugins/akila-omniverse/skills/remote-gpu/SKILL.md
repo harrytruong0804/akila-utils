@@ -167,19 +167,58 @@ throwaway link and don't want to install a mesh VPN.
 
 ## Passwordless login (SSH key) — optional, do once per box
 
-```powershell
-# On HOME PC: create a key if you don't have one
-ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\id_ed25519 -N '""'
+> **DO NOT copy-paste the public key by hand into the rented box.** RDP clipboard is
+> often not shared, so the user retypes the ~50-char base64 and flips one character
+> (classic: `...bkDvz...` → `...bkDVz...`). Base64 is case-sensitive — one wrong char =
+> a different key = sshd silently ignores it and keeps asking for the password. Use the
+> `scp` transfer below so the key file moves **byte-exact**; password is typed only once.
 
-# Copy the PUBLIC key into the box's authorized_keys. For an ADMIN account on Windows,
-# OpenSSH reads C:\ProgramData\ssh\administrators_authorized_keys (NOT the user's folder):
-type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh ezycloudx-admin@<100.x> `
-  "powershell -c \"Add-Content C:\ProgramData\ssh\administrators_authorized_keys (\$input); icacls C:\ProgramData\ssh\administrators_authorized_keys /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F'\""
+### Step 0 — on HOME PC: ensure a key exists + add the `gpu` alias
+
+```powershell
+# Create an ed25519 key if you don't have one
+if (-not (Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
+    ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519" -N '""'
+}
+# Alias so you can later just type `ssh gpu` (edit HostName to the box's 100.x IP)
+@"
+Host gpu
+    HostName 100.64.174.26
+    User ezycloudx-admin
+    IdentityFile ~/.ssh/id_ed25519
+    StrictHostKeyChecking accept-new
+"@ | Add-Content "$env:USERPROFILE\.ssh\config"
 ```
 
-> Windows OpenSSH quirk: for accounts in the Administrators group the key MUST live in
-> `administrators_authorized_keys` with permissions limited to `Administrators` + `SYSTEM`,
-> otherwise sshd ignores it and silently falls back to the password.
+### Step 1 — on HOME PC: ship the public key (type the RDP password once)
+
+```powershell
+scp $env:USERPROFILE\.ssh\id_ed25519.pub ezycloudx-admin@100.64.174.26:mykey.pub
+# first time asks to trust host key -> yes; then the RDP password (e.g. 58734097)
+```
+
+### Step 2 — on the RENTED box (Admin PowerShell): install it
+
+```powershell
+$pub   = (Get-Content "$env:USERPROFILE\mykey.pub" -Raw).Trim()
+$akeys = "$env:ProgramData\ssh\administrators_authorized_keys"
+Set-Content -Path $akeys -Value $pub -Encoding ascii          # overwrite -> wipes any bad key
+icacls $akeys /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
+Restart-Service sshd
+Remove-Item "$env:USERPROFILE\mykey.pub" -ErrorAction SilentlyContinue
+Get-Content $akeys
+```
+
+### Step 3 — from HOME PC: verify (no password should be asked)
+
+```powershell
+ssh -o BatchMode=yes gpu whoami     # prints the remote user => key works
+```
+
+> **Windows OpenSSH quirk:** for accounts in the **Administrators** group the key MUST
+> live in `C:\ProgramData\ssh\administrators_authorized_keys` (NOT the user's
+> `~/.ssh/authorized_keys`), with ACL restricted to `Administrators` + `SYSTEM`. Wrong
+> location or loose ACL → sshd ignores the key and silently falls back to the password.
 
 ### Handy alias — `~/.ssh/config` on the home PC
 
@@ -213,6 +252,7 @@ Each new machine reuses your permanent home setup; you only redo the box side:
 | `ping ... via DERP`, "direct connection not established" | No P2P hole-punch, using relay | Cosmetic — relayed SSH still works; ignore |
 | Node missing from `tailscale status` | Box signed into a different Tailscale account | Re-run `tailscale up` and log in with **hanzotruong0804@** |
 | Key ignored, still asks password | Admin account key not in `administrators_authorized_keys` / wrong ACL | Place key there and restrict ACL to Administrators+SYSTEM |
+| Key ignored even after correct ACL | Public key mistyped when pasted by hand over RDP (case-sensitive base64) | Don't hand-type — `scp` the `.pub` file (see Passwordless login Step 1); `Set-Content` to overwrite the bad line |
 | Can't reach the box at all | Provider NAT blocks inbound (expected) | Don't SSH the RDP host:port — use the `100.x` Tailscale IP |
 
 ## Reference values (this user)
