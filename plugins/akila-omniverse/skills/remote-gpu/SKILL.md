@@ -10,7 +10,12 @@ description: >
   reachable only via an RDP address like netN.thuepcpro.vn:PORT and wants shell/SSH
   access. Covers Tailscale (recommended), reverse SSH via VPS, and ngrok/Cloudflare
   tunnels, plus enabling OpenSSH Server + firewall on Windows, key auth, and a
-  per-rental checklist.
+  per-rental checklist. ALSO covers running the Akila **usd-viewer** (Omniverse Kit
+  streaming app) on the rented box and connecting the web-user-platform FE to it over
+  Tailscale end to end — use for "chạy usd-viewer trên gpu thuê", "run usd-viewer on
+  remote gpu", "stream the viewer from the rented box", "monitor the Kit log on the
+  remote box", or when remote streaming fails with "Got stop event while waiting for
+  client connection" / "Client sent STUN requests but did not receive any responses".
 ---
 
 # Remote GPU — SSH into a Rented GPU Machine
@@ -261,3 +266,112 @@ Each new machine reuses your permanent home setup; you only redo the box side:
 - `no-nas` machines have no NAS; NAS machines expose an **internal-only** SMB share
   `\\10.10.20.20\ezc-common` (reachable only from inside the box — not useful from home).
 - Home Tailscale node: `desktop-ai-engineer` = `100.85.114.104`, account **hanzotruong0804@** (permanent).
+
+---
+
+# Part 2 — Run usd-viewer on the box + stream the FE over Tailscale
+
+Once SSH/Tailscale (Part 1) works, this brings up `akila.viewer_streaming.kit` on the box
+and streams it to the local `web-user-platform` FE. `BOX` = the box's Tailscale IP
+(example `100.64.174.26`), user `ezycloudx-admin`. Helper files ship with this skill:
+`stun_server.py`, `run_stun.bat`, `setup_task.bat`, `runfast.example.bat`.
+
+## The one trick that makes remote ops sane
+
+PowerShell→ssh→cmd→powershell quoting is a graveyard. Two rules:
+
+1. **Run remote PowerShell via base64 `-EncodedCommand`** — zero quoting issues:
+   ```powershell
+   $ps = @'
+   <multi-line PowerShell that runs ON THE BOX>
+   '@
+   $enc=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))
+   ssh -o BatchMode=yes ezycloudx-admin@BOX "powershell -NoProfile -EncodedCommand $enc"
+   ```
+2. **Ship files with `scp`, don't echo them** — write any .bat/.py locally and `scp` it.
+
+## A — clone + confirm build
+
+Launch chain: `runfast.bat` → `run.bat` (`cd kit-sdk` → `repo.bat launch -n akila.viewer_streaming.kit`).
+Build output is in **`kit-sdk\_build`**, NOT repo-root. If missing, `cd kit-sdk && repo.bat build`
+on the box (multi-GB packman pull). **Python ext edits load live** — no rebuild for `.py`.
+
+## B — launch Kit in the RDP session (GPU needs a real session)
+
+A GPU app from a plain detached ssh process can't get the GPU. Launch via a one-shot
+scheduled task that runs inside the logged-on RDP session (`ssh BOX "query user"` must show
+an `Active` rdp line). Ship `setup_task.bat`, then `ssh BOX "C:\...\setup_task.bat"`. Kill
+reliably (Kit spawns helpers — loop it), via EncodedCommand:
+`1..4 | % { Get-Process kit -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue; Start-Sleep -m 500 }`
+
+## C — fixed-path logging (NOT tee)
+
+`tee` is unreliable on Windows. In `runfast.bat` forward to Kit:
+`--/log/file=%~dp0viewer.log` and `--/log/level=info` (the `[PNSD-2649]` diag logs are
+`[Warning]`). Log is always at `...\usd-viewer\viewer.log`.
+
+## D — streaming bring-up over Tailscale (the hard part)
+
+FE library connects `streamSource:'direct'`, `server=BOX` (IP only). Kit ports: signaling
+**TCP 49100**, media **UDP 47998 / shared 49100**, messaging **8011**. `akila.streaming.readiness`
+injects a cloud STUN/candidate config that breaks local. Three required fixes:
+
+- **D1 candidate** — `stunIp` becomes BOTH the client's STUN server AND the advertised media
+  candidate; default `demo-nucleus-us-staging.akila3d.com` (unreachable). Override in runfast.bat:
+  `--/exts/akila.streaming.readiness/stun_ip=BOX`. Log should then show `Processed ice candidate: ... BOX 49100`.
+- **D2 STUN responder** — because `stunIp` is also the client's STUN server, the FE STUNs
+  `BOX:3478` and hangs if nothing answers (browser: *"Client sent STUN requests but did not
+  receive any responses"*; Kit: *"Got stop event while waiting for client connection"*). Ship
+  `stun_server.py` + `run_stun.bat`, run as a **SYSTEM scheduled task** (Start-Process dies with
+  the ssh session): `schtasks /create /tn AkilaStun /ru SYSTEM /sc once /st 23:59 /f /tr "C:\Users\ezycloudx-admin\Desktop\run_stun.bat"` then `schtasks /run /tn AkilaStun`.
+  **Do NOT use Google STUN** — it returns the unreachable public IP and corrupts the candidate.
+- **D3 firewall** — TCP 49100 is often already open but UDP (media + STUN) is not. EncodedCommand:
+  ```powershell
+  $kit=(Get-Process kit|Select -First 1).Path
+  New-NetFirewallRule -DisplayName 'Akila Kit Stream' -Direction Inbound -Program $kit -Action Allow -Profile Any
+  New-NetFirewallRule -DisplayName 'Akila Stream UDP'  -Direction Inbound -Protocol UDP -LocalPort 47998,49100,3478 -Action Allow -Profile Any
+  ```
+- **D4 FE** — `usd-config.js`: `STREAM_CONFIG.source='local'`, `local.server='BOX'`, `forceWSS=false`,
+  `authenticate=false` (see the `usd-viewer-local-debug` skill for the full FE switch).
+
+## E — verify, in order
+
+```powershell
+(Test-NetConnection BOX -Port 49100).TcpTestSucceeded   # True
+@'
+import socket,struct,os
+m=0x2112A442;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(5)
+s.sendto(struct.pack("!HHI",1,0,m)+os.urandom(12),("BOX",3478))
+print("OK" if s.recvfrom(2048) else "FAIL")
+'@ | python -                                            # OK = STUN answers over Tailscale
+```
+In `viewer.log`, in order: `Processed ice candidate: ... BOX 49100` → `Client connected to WebRTC server`.
+
+## F — monitor the remote log live (auto-reconnect; DERP drops ssh)
+
+Use the harness **Monitor** tool with a persistent command. Build the base64 of
+`Get-Content -LiteralPath '<viewer.log path>' -Wait -Tail 0`, then:
+```bash
+while true; do ssh -o BatchMode=yes -o ServerAliveInterval=20 ezycloudx-admin@BOX \
+  "powershell -NoProfile -EncodedCommand <b64>" 2>/dev/null \
+  | grep -aiE --line-buffered 'client.connected|\[PNSD-2649\]|ghost bound|GPU crash|[Dd]evice lost|\[Fatal\]|\[Error\]' \
+  | grep -aviE --line-buffered 'opentelemetry|Streaming Manager|Viewer Readiness|waiting for client connection|Can not import AKILA Schema'; sleep 3; done
+```
+The Kit log floods with `[Info] omni.rtx Mapping...` — keep the include filter tight.
+
+## Part 2 troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Kit via ssh has no GPU / crashes | detached process, no session | scheduled task in the active RDP session (B) |
+| `Got stop event while waiting for client connection` (Kit) | client never completes WebRTC | server side of an FE-connect failure — debug FE/streaming, not Kit |
+| browser `Client sent STUN requests but did not receive any responses` | no STUN server at `stunIp:3478` | run `stun_server.py` on the box (D2) |
+| candidate = `demo-nucleus-us-staging...` | default cloud STUN | override `stun_ip=BOX` (D1) |
+| STUN test times out; server "listening" then gone | `Start-Process` died with ssh session | run STUN as a **SYSTEM scheduled task** |
+| TCP 49100 ok but media never connects | UDP blocked on Tailscale NIC | allow kit.exe + UDP `-Profile Any` (D3) |
+| ssh monitor dies every few min | Tailscale DERP relay drop | wrap ssh in `while true; do ...; sleep 3; done` |
+| `tee` log empty/mangled | Windows tee unreliable | use `--/log/file=` (C) |
+| ghost bound but a few prims unaffected | `IsInstance` prims ignore material binding + doubleSided | USD limitation; instanced geometry needs another approach |
+
+Verified 2026-06-24 on a rented **RTX 5060 Ti** box: full chain works; ghost PT-bounce=32 +
+backface-cull ran without GPU device-loss (the A4000-local crash did not reproduce on Blackwell).
