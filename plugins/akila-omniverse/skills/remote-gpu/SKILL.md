@@ -290,6 +290,67 @@ PowerShell→ssh→cmd→powershell quoting is a graveyard. Two rules:
    ```
 2. **Ship files with `scp`, don't echo them** — write any .bat/.py locally and `scp` it.
 
+## A0 — git auth on the box (so you can clone the akila Bitbucket repos)
+
+A fresh box has git installed but **no working Bitbucket credentials**. The repos live on
+Bitbucket Cloud (`git@bitbucket.org:aden-akila/<repo>.git`, e.g. `usd-viewer`).
+
+> **A plain Atlassian API token does NOT work for git clone.** Verified 2026-06-25: an
+> `ATATT…` token from id.atlassian.com was rejected (`remote: You may not have access… /
+> Authentication failed`) for **every** username scheme — account email AND `x-token-auth`,
+> embedded in the URL with `-c credential.helper=` (no helper). Bitbucket git-over-HTTPS only
+> accepts **App Passwords**, **Repository/Workspace Access Tokens**, or an **API token created
+> WITH SCOPES**. A scopeless API token authenticates the REST API only, never git.
+
+Also note: a **non-interactive ssh session can't use Git Credential Manager** — GCM's
+`wincredman` store needs the interactive desktop, so over `ssh gpu` you get
+`fatal: Unable to persist credentials with the 'wincredman' credential store`. Headless git
+auth must avoid GCM (use an SSH key, or `credential.helper store`).
+
+### Recommended — reuse your home SSH key (fully headless, no token)
+
+Your home `~/.ssh/id_ed25519` is already registered with Bitbucket (that's why home clones
+work). Ship it to the box and clone over SSH — no token, no expiry:
+
+```powershell
+# from HOME (you already have passwordless `ssh gpu`):
+# 1) confirm the home key authenticates to Bitbucket
+ssh -o BatchMode=yes -T git@bitbucket.org          # → "authenticated via ssh key."
+# 2) make ~/.ssh on the box, then scp the keypair in byte-exact
+#    (mkdir via EncodedCommand so $env resolves on the box)
+scp -o BatchMode=yes "$env:USERPROFILE\.ssh\id_ed25519" "$env:USERPROFILE\.ssh\id_ed25519.pub" gpu:.ssh/
+```
+
+Then on the box (via `-EncodedCommand`): lock the key's ACL, trust Bitbucket's host key, test:
+
+```powershell
+$k="$env:USERPROFILE\.ssh\id_ed25519"
+icacls $k /inheritance:r | Out-Null
+icacls $k /grant:r "$($env:USERNAME):F" | Out-Null          # Windows OpenSSH rejects a loose-ACL key
+ssh-keyscan -t rsa,ed25519 bitbucket.org 2>$null | Out-File -Encoding ascii -Append "$env:USERPROFILE\.ssh\known_hosts"
+ssh -o BatchMode=yes -T git@bitbucket.org                   # "authenticated via ssh key."
+git clone --branch <branch> git@bitbucket.org:aden-akila/usd-viewer.git C:\SOURCE\USD\usd-viewer
+```
+
+> Clone onto the **roomy drive** — these boxes put ~800 GB free on `C:` while `D:`/`E:` are
+> near-full; check with `Get-PSDrive -PSProvider FileSystem`. The `connection is not using a
+> post-quantum key exchange` warning from Bitbucket is cosmetic.
+
+Trade-off: this copies your private key onto a rented box. Fine for an ephemeral rental you
+control; if you'd rather not, generate a box-local key and add its `.pub` to Bitbucket.
+
+### Alternative — scoped API token (only if you must use HTTPS)
+
+Create the token at **https://id.atlassian.com/manage-profile/security/api-tokens** — use
+**"Create API token with scopes"** and grant the repository read scope (NOT the plain
+"Create API token", which has no git scope). Username = your **Atlassian account email**:
+
+```powershell
+git config --global credential.helper store
+Set-Content "$env:USERPROFILE\.git-credentials" -NoNewline -Encoding ascii `
+  -Value "https://YOUR_EMAIL_URLENCODED:SCOPED_TOKEN@bitbucket.org"   # @ in email → %40
+```
+
 ## A — clone + confirm build
 
 Launch chain: `runfast.bat` → `run.bat` (`cd kit-sdk` → `repo.bat launch -n akila.viewer_streaming.kit`).
@@ -363,6 +424,8 @@ The Kit log floods with `[Info] omni.rtx Mapping...` — keep the include filter
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `git clone` → `Authentication failed` with an `ATATT…` token | plain Atlassian API token has no git scope | use SSH key (A0) or a **scoped** API token from id.atlassian.com (A0) |
+| `Unable to persist credentials with the 'wincredman' credential store` over ssh | GCM needs the interactive desktop; ssh session has none | use SSH key, or `credential.helper store` (A0) — not GCM |
 | Kit via ssh has no GPU / crashes | detached process, no session | scheduled task in the active RDP session (B) |
 | `Got stop event while waiting for client connection` (Kit) | client never completes WebRTC | server side of an FE-connect failure — debug FE/streaming, not Kit |
 | browser `Client sent STUN requests but did not receive any responses` | no STUN server at `stunIp:3478` | run `stun_server.py` on the box (D2) |
