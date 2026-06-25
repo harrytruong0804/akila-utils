@@ -295,12 +295,14 @@ PowerShell→ssh→cmd→powershell quoting is a graveyard. Two rules:
 A fresh box has git installed but **no working Bitbucket credentials**. The repos live on
 Bitbucket Cloud (`git@bitbucket.org:aden-akila/<repo>.git`, e.g. `usd-viewer`).
 
-> **A plain Atlassian API token does NOT work for git clone.** Verified 2026-06-25: an
-> `ATATT…` token from id.atlassian.com was rejected (`remote: You may not have access… /
-> Authentication failed`) for **every** username scheme — account email AND `x-token-auth`,
-> embedded in the URL with `-c credential.helper=` (no helper). Bitbucket git-over-HTTPS only
-> accepts **App Passwords**, **Repository/Workspace Access Tokens**, or an **API token created
-> WITH SCOPES**. A scopeless API token authenticates the REST API only, never git.
+> **A SCOPED Atlassian API token DOES work for git over HTTPS — but only with the right
+> username.** Verified 2026-06-25: an `ATATT…` token carrying the `read:repository:bitbucket`
+> scope clones fine using the fixed username **`x-bitbucket-api-token-auth`**. The SAME token is
+> rejected (`remote: You may not have access… / Authentication failed`) when the username is the
+> account **email** or **`x-token-auth`** — those are wrong for an API token (`x-token-auth` is
+> the username for a *Repository/Workspace Access Token*, a different credential). A **scopeless**
+> API token authenticates the REST API only, never git. Note: Bitbucket **App Passwords are
+> deprecated/removed by Atlassian** — a scoped API token or an SSH key are the paths now.
 
 Also note: a **non-interactive ssh session can't use Git Credential Manager** — GCM's
 `wincredman` store needs the interactive desktop, so over `ssh gpu` you get
@@ -339,17 +341,25 @@ git clone --branch <branch> git@bitbucket.org:aden-akila/usd-viewer.git C:\SOURC
 Trade-off: this copies your private key onto a rented box. Fine for an ephemeral rental you
 control; if you'd rather not, generate a box-local key and add its `.pub` to Bitbucket.
 
-### Alternative — scoped API token (only if you must use HTTPS)
+### Alternative — scoped API token over HTTPS (verified 2026-06-25)
 
 Create the token at **https://id.atlassian.com/manage-profile/security/api-tokens** — use
-**"Create API token with scopes"** and grant the repository read scope (NOT the plain
-"Create API token", which has no git scope). Username = your **Atlassian account email**:
+**"Create API token with scopes"** and grant **`read:repository:bitbucket`** (+ `write:…` to
+push). NOT the plain "Create API token" (no git scope). Username = the fixed literal
+**`x-bitbucket-api-token-auth`** (NOT your email). Set it via `url.insteadOf` so the main repo
+AND submodules both authenticate, and disable GCM (headless ssh can't reach the `wincredman`
+store). Run on the box via `-EncodedCommand`:
 
 ```powershell
-git config --global credential.helper store
-Set-Content "$env:USERPROFILE\.git-credentials" -NoNewline -Encoding ascii `
-  -Value "https://YOUR_EMAIL_URLENCODED:SCOPED_TOKEN@bitbucket.org"   # @ in email → %40
+$tok = 'ATATT…' -replace '=','%3D'    # URL-encode any '=' in the token
+git config --global url."https://x-bitbucket-api-token-auth:$tok@bitbucket.org/".insteadOf "https://bitbucket.org/"
+git config --global credential.helper ''
+git -c credential.helper= clone --branch <branch> https://bitbucket.org/aden-akila/usd-viewer.git C:\Users\ezycloudx-admin\Desktop\usd-viewer
 ```
+
+If the box already has a `url."git@bitbucket.org:".insteadOf` (SSH) rule from a prior setup,
+remove it first (`git config --global --remove-section url."git@bitbucket.org:"`) — it hijacks
+the HTTPS URL to SSH and you get `Permission denied (publickey)`.
 
 ## A — clone + confirm build
 
