@@ -367,6 +367,54 @@ Launch chain: `runfast.bat` → `run.bat` (`cd kit-sdk` → `repo.bat launch -n 
 Build output is in **`kit-sdk\_build`**, NOT repo-root. If missing, `cd kit-sdk && repo.bat build`
 on the box (multi-GB packman pull). **Python ext edits load live** — no rebuild for `.py`.
 
+## A2 — fresh box: clone + build from scratch (Bitbucket gotchas, verified 2026-06-27)
+
+When the box has no `usd-viewer` (old rental gone, can't copy): clone + build. Repos are **private
+Bitbucket** (`aden-akila`): `usd-viewer` (origin SSH) + 3 HTTPS submodules `kit-sdk`,
+`externals/akila.main_ext`, `externals/akila.core.pylib`.
+
+**Auth — three gotchas that each waste a round:**
+- **App passwords are removed from Atlassian** → use an **Atlassian API token** (`ATATT…`).
+- **Username = the Bitbucket username, NOT the email.** `harry.truong@akila3d.com` → `harrytruongakila`.
+  Email-as-username gives `403 "may not have access" / Authentication failed`. Find the username (and verify
+  the token) via the REPO endpoint — `/2.0/user` returns 403 (token has no account scope) but the repo works
+  and its clone URL carries the username:
+  `curl -u <email>:<TOKEN> https://api.bitbucket.org/2.0/repositories/aden-akila/usd-viewer`
+  → `"clone":[{"name":"https","href":"https://harrytruongakila@bitbucket.org/…"}]`.
+- **Git Credential Manager (GCM/wincredman) blocks headless SSH** — it overrides `credential.helper store`
+  and can't prompt (`Unable to persist with 'wincredman'` + `/dev/tty: No such device`). **Bypass with
+  `url.insteadOf`** so creds are inline in every URL (clone + submodules), no helper:
+  ```powershell
+  $tok = "<TOKEN, with any '=' url-encoded as %3D>"
+  git config --global url."https://harrytruongakila:$tok@bitbucket.org/".insteadOf "https://bitbucket.org/"
+  cd $env:USERPROFILE\Desktop
+  git clone https://bitbucket.org/aden-akila/usd-viewer.git
+  cd usd-viewer; git checkout feature/<branch>; git submodule update --init --recursive
+  ```
+  (The `Unable to persist with wincredman` line still prints — harmless, the inline creds already authed.)
+
+**Build — must survive the SSH session.** A detached `Start-Process` build is **killed when the SSH session
+ends** (Windows OpenSSH kills session children → log freezes mid-packman). Run it as a **scheduled task**,
+log to a file + `.done` marker, poll `build.done`:
+```powershell
+# build.bat: cd /d <root>\kit-sdk && call repo.bat build > <Desktop>\build.log 2>&1 && echo EXIT=%errorlevel% > <Desktop>\build.done
+schtasks /create /tn AkilaBuild /tr "cmd /c <Desktop>\build.bat" /sc once /st 00:00 /ru ezycloudx-admin /rp <PASS> /rl highest /f
+schtasks /run /tn AkilaBuild
+```
+`BUILD (RELEASE) SUCCEEDED` in ~30s is normal — Kit "build" stages prebuilt packman packages, not a compile.
+
+**The build does NOT stage the usd-viewer app or its akila extensions** (only kit-sdk's own go to
+`_build\…\exts`). Two manual steps after build, or the launch finds nothing — the `.kit` app's
+`[settings.app.exts.folders]` is `${app}/../exts` + `/../apps`:
+1. **Apps** → `Copy-Item source\apps\*.kit kit-sdk\_build\windows-x86_64\release\apps\`.
+2. **Extensions** → junction every local ext into `_build\…\release\exts`: for each dir under
+   `source\extensions\` and `externals\` that has `config\extension.toml`,
+   `New-Item -ItemType Junction -Path <exts>\<name> -Target <dir>` (akila.viewer_messaging, akila.main_ext,
+   akila.core.pylib, akila.streaming.readiness, akila.observability_bootstrap, akila.viewer_setup, …).
+
+**Deploy local-only commits:** the cloned remote branch lacks any unpushed work — `scp` the changed
+`.py`/`.kit`/`.toml` on top (Python loads live; same as the push+pull rule).
+
 ## B — launch Kit in the RDP session (GPU needs a real session)
 
 A GPU app from a plain detached ssh process can't get the GPU. Launch via a one-shot
