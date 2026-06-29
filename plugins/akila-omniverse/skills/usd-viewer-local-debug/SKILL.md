@@ -71,9 +71,10 @@ Why each flip matters:
 ### 1. Confirm inputs
 Ask the user for:
 - **Local Kit server IP/host** (e.g. `10.164.24.130`) — required.
-- **Datacenter / environment** the rest of the app (REST API, STUN, non-local streaming)
-  should target — `us` or `cn` (see step 3). Default to whatever is already in
-  `serverConfig.json`.
+
+**Do NOT block on the datacenter.** Apply the local-mode change with whatever
+`serverConfig.json` already has, then **remind the user to set the API URL to the right
+datacenter** for their project (step 3). Don't try to infer it — just apply and remind.
 
 ### 2. Switch the viewer to local mode
 Edit `src/views/digital-twin/open-usd/utils/usd-config.js`:
@@ -83,20 +84,39 @@ Edit `src/views/digital-twin/open-usd/utils/usd-config.js`:
 - `DEFAULT_STREAM_OPTIONS.forceWSS` → `false`
 - (optional) `DEFAULT_STREAM_OPTIONS.logLevel` → `'INFO'` while debugging
 
-### 3. Point the app at the right datacenter (only if needed)
-`public/config/serverConfig.json` selects which backend the app talks to. To target the
-**US** environment, the consistent set is:
-```json
-{
-  "VUE_APP_API_BASE_URL": "https://us-api-test.akila3d.com/",
-  "VUE_APP_DC": "us",
+### 3. Remind the user to set the right datacenter (don't guess it)
+After applying the local-mode change, **do not infer or auto-pick the datacenter.** Apply
+with whatever `serverConfig.json` currently holds, then tell the user plainly:
+
+> "Local stream is pointed at your Kit box. Now set `VUE_APP_API_BASE_URL` in
+> `public/config/serverConfig.json` to the datacenter that hosts **your** project's data,
+> or the app will load the wrong site/project list."
+
+In **local** mode only `VUE_APP_API_BASE_URL` strictly matters — it must point at the DC
+that actually hosts the project/stage data, so REST calls (project list, scene tree,
+auth-free reads) resolve. The streaming/STUN hosts are bypassed (the stream comes from
+`STREAM_CONFIG.local.server`), so they can stay on any DC — but keep the whole set
+consistent if the user ever flips `source` back to `'stream'`.
+
+Reference sets — let the **user** pick the one matching their project (most Akila projects,
+e.g. **CGCO** on `nucleus-fr.akila3d.com`, are **FR**):
+```jsonc
+// FR
+{ "VUE_APP_API_BASE_URL": "https://fr-api.akila3d.com/", "VUE_APP_DC": "fr",
+  "VUE_APP_STREAMING_BASE_URL": "https://streaming-fr-staging.akila3d.com",
+  "VUE_APP_STREAMING_STUN_SERVER": "nucleus-fr.akila3d.com:3478" }
+// US
+{ "VUE_APP_API_BASE_URL": "https://us-api-test.akila3d.com/", "VUE_APP_DC": "us",
   "VUE_APP_STREAMING_BASE_URL": "https://streaming-us-staging.akila3d.com",
-  "VUE_APP_STREAMING_STUN_SERVER": "nucleus-us-test.akila3d.com:3478"
-}
+  "VUE_APP_STREAMING_STUN_SERVER": "nucleus-us-test.akila3d.com:3478" }
+// CN
+{ "VUE_APP_API_BASE_URL": "https://api-test.akila3d.com/", "VUE_APP_DC": "cn",
+  "VUE_APP_STREAMING_BASE_URL": "https://streaming-cn-staging.akila3d.com",
+  "VUE_APP_STREAMING_STUN_SERVER": "nucleus-cn-test.akila3d.com:3478" }
 ```
-For **CN**, the mirror is `api-test` / `"cn"` / `nucleus-cn-test…`. Keep `VUE_APP_DC`,
-the API host, and the STUN host on the **same** datacenter — a mismatch breaks the
-TURN/STUN negotiation even when local streaming itself works.
+A common working edit is changing **only** `VUE_APP_API_BASE_URL` to the right host (e.g.
+`https://fr-api.akila3d.com/`). Keep `VUE_APP_DC`, API host, and STUN host on the **same**
+datacenter if you set more than one.
 
 ### 4. Windows dev-build prerequisites (one-time per clone)
 This repo's build assumes a POSIX shell and an old toolchain. On Windows you typically
