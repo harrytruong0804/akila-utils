@@ -118,9 +118,11 @@ A common working edit is changing **only** `VUE_APP_API_BASE_URL` to the right h
 `https://fr-api.akila3d.com/`). Keep `VUE_APP_DC`, API host, and STUN host on the **same**
 datacenter if you set more than one.
 
-### 4. Windows dev-build prerequisites (one-time per clone)
-This repo's build assumes a POSIX shell and an old toolchain. On Windows you typically
-need all three:
+### 4. Windows dev-build prerequisites — always apply
+This repo's build assumes a POSIX shell and an old toolchain. **Apply all three by default**
+— don't gate on the user's shell: the bash-style serve script and HappyPack break in
+PowerShell/cmd and on modern Node, and the edits are harmless under bash/WSL. Just apply
+them every time (and remind the user they're build-only, arguably worth upstreaming):
 
 **a. `package.json` — make the serve script cross-platform**
 The bare `NODE_OPTIONS=… VUE_APP_LOCAL_MODE=true vue-cli-service serve` is bash-only and
